@@ -1,0 +1,4 @@
+eval_dataset/
+plots/
+results/
+*.DS_Store
