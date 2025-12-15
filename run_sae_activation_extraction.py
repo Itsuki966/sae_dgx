@@ -6,6 +6,7 @@ Teacher Forcingを使用して指定レイヤーのSAE activationを抽出しま
 import os
 import sys
 import argparse
+import torch
 from datetime import datetime
 from pathlib import Path
 
@@ -15,9 +16,7 @@ sys.path.insert(0, str(project_root))
 
 from sae_activation_extractor import (
     SAEActivationExtractor,
-    ExtractionConfig,
-    load_samples_from_json,
-    save_results_to_json
+    ExtractionConfig
 )
 
 
@@ -126,13 +125,6 @@ def main():
     if hook_name is None:
         hook_name = f"blocks.{args.target_layer}.hook_resid_post"
     
-    # 出力ファイルパスの生成
-    output_path = args.output
-    if output_path is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        input_stem = Path(args.input).stem
-        output_path = f"results/feedback/{input_stem}_layer{args.target_layer}_{timestamp}.json"
-    
     # 設定の作成
     config = ExtractionConfig(
         model_name=args.model,
@@ -140,71 +132,21 @@ def main():
         sae_id=args.sae_id,
         target_layer=args.target_layer,
         hook_name=hook_name,
-        top_k_features=args.top_k
+        top_k_features=args.top_k,
+        dtype=torch.bfloat16
     )
     
-    # 設定の表示
-    print(f"\n📋 Configuration:")
-    print(f"   Model: {config.model_name}")
-    print(f"   SAE Release: {config.sae_release}")
-    print(f"   SAE ID: {config.sae_id}")
-    print(f"   Target Layer: {config.target_layer}")
-    print(f"   Hook Name: {config.hook_name}")
-    print(f"   Top-K Features: {config.top_k_features}")
-    print(f"   Save All Tokens: {args.save_all_tokens}")
-    print(f"   Input: {args.input}")
-    print(f"   Output: {output_path}")
-    
     try:
-        # サンプルの読み込み
-        print(f"\n📂 Loading samples from {args.input}...")
-        samples = load_samples_from_json(args.input)
-        
-        if args.max_samples is not None:
-            samples = samples[:args.max_samples]
-        
-        print(f"✅ Loaded {len(samples)} samples")
-        
         # Extractorの初期化
         print(f"\n🔧 Initializing SAE Activation Extractor...")
         extractor = SAEActivationExtractor(config)
         
-        # モデルとSAEのロード
-        extractor.load_model_and_sae()
-        
-        # Activation抽出の実行
-        print(f"\n🔬 Extracting SAE activations...")
-        print(f"   This may take several minutes...")
-        
-        extraction_results = extractor.extract_batch(
-            samples=samples,
+        # 完全な抽出実行（読み込み + 分析 + 保存）
+        extractor.run_complete_extraction(
+            input_json_path=args.input,
+            sample_size=args.max_samples,
             save_all_tokens=args.save_all_tokens,
             verbose=args.verbose
-        )
-        
-        # 統計情報の表示
-        success_count = sum(1 for r in extraction_results if r.get("status") == "success")
-        error_count = len(extraction_results) - success_count
-        
-        print(f"\n📊 Extraction Summary:")
-        print(f"   Total Samples: {len(extraction_results)}")
-        print(f"   Successful: {success_count}")
-        print(f"   Errors: {error_count}")
-        
-        # エラーの詳細表示（最初の5件）
-        if error_count > 0:
-            print(f"\n⚠️ Error Details (first 5):")
-            error_samples = [r for r in extraction_results if r.get("status") != "success"]
-            for i, err in enumerate(error_samples[:5]):
-                print(f"   {i+1}. Q{err.get('question_id')} - {err.get('error', 'Unknown error')}")
-        
-        # 結果の保存
-        print(f"\n💾 Saving results...")
-        save_results_to_json(
-            original_json_path=args.input,
-            extraction_results=extraction_results,
-            output_json_path=output_path,
-            config=config
         )
         
         # クリーンアップ
@@ -213,7 +155,6 @@ def main():
         
         print(f"\n" + "=" * 60)
         print(f"✅ Extraction completed successfully!")
-        print(f"📁 Results saved to: {output_path}")
         print("=" * 60)
         
         return 0
