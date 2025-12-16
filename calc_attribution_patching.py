@@ -251,7 +251,8 @@ class AttributionPatchingAnalyzer:
 def run_attribution_patching_pipeline(
     input_json_path: str = None,
     output_json_path: str = None,
-    config_name: str = "FEEDBACK_GEMMA2_9B_IT_CONFIG"
+    config_name: str = None,
+    layer: int = None
 ):
     """
     Attribution Patching分析のメインパイプライン
@@ -259,7 +260,8 @@ def run_attribution_patching_pipeline(
     Args:
         input_json_path: 入力JSONファイルのパス（指定しない場合は自動検索）
         output_json_path: 出力JSONファイルのパス（指定しない場合は自動生成）
-        config_name: 使用するconfig名（config.pyから読み込み）
+        config_name: 使用するconfig名（config.pyから読み込み、layerと併用不可）
+        layer: 解析対象のlayer番号（9, 20, 31をサポート、config_nameより優先）
     """
     # プロジェクトルートの取得
     project_root = Path(__file__).parent.absolute()
@@ -297,8 +299,32 @@ def run_attribution_patching_pipeline(
         data = json.load(f)
 
     # 2. Configの読み込み
-    from config import FEEDBACK_GEMMA2_9B_IT_CONFIG
-    config = FEEDBACK_GEMMA2_9B_IT_CONFIG
+    if layer is not None:
+        # layer番号からconfigを自動選択
+        if layer == 9:
+            from config import FEEDBACK_GEMMA2_9B_IT_LAYER9_CONFIG
+            config = FEEDBACK_GEMMA2_9B_IT_LAYER9_CONFIG
+            print(f"   📍 Using Layer 9 config")
+        elif layer == 20:
+            from config import FEEDBACK_GEMMA2_9B_IT_LAYER20_CONFIG
+            config = FEEDBACK_GEMMA2_9B_IT_LAYER20_CONFIG
+            print(f"   📍 Using Layer 20 config")
+        elif layer == 31:
+            from config import FEEDBACK_GEMMA2_9B_IT_CONFIG
+            config = FEEDBACK_GEMMA2_9B_IT_CONFIG
+            print(f"   📍 Using Layer 31 config")
+        else:
+            raise ValueError(f"Unsupported layer: {layer}. Supported layers: 9, 20, 31")
+    elif config_name is not None:
+        # config名から直接読み込み
+        import config as config_module
+        config = getattr(config_module, config_name)
+        print(f"   📍 Using config: {config_name}")
+    else:
+        # デフォルトはLayer 31
+        from config import FEEDBACK_GEMMA2_9B_IT_CONFIG
+        config = FEEDBACK_GEMMA2_9B_IT_CONFIG
+        print(f"   📍 Using default Layer 31 config")
 
     # 3. モデルとSAEの準備
     print("🔄 Loading Model & SAE...")
@@ -394,10 +420,17 @@ def main():
         help="Output JSON file path (default: auto-generated with timestamp)"
     )
     parser.add_argument(
+        "--layer",
+        type=int,
+        default=None,
+        choices=[9, 20, 31],
+        help="Layer number to analyze (9, 20, or 31). Overrides --config if specified."
+    )
+    parser.add_argument(
         "--config",
         type=str,
-        default="FEEDBACK_GEMMA2_9B_IT_CONFIG",
-        help="Config name to use from config.py"
+        default=None,
+        help="Config name to use from config.py (ignored if --layer is specified)"
     )
     
     args = parser.parse_args()
@@ -406,7 +439,8 @@ def main():
         run_attribution_patching_pipeline(
             input_json_path=args.input,
             output_json_path=args.output,
-            config_name=args.config
+            config_name=args.config,
+            layer=args.layer
         )
     except Exception as e:
         print(f"❌ Error during execution: {e}")
