@@ -57,24 +57,32 @@ def parse_args():
     )
     
     parser.add_argument(
+        "--layer",
+        type=int,
+        default=20,
+        choices=[9, 20],
+        help="Target layer number (9 or 20, default: 20). Auto-configures sae-id and hook-name."
+    )
+    
+    parser.add_argument(
         "--sae-id",
         type=str,
-        default="layer_20/width_16k/canonical",
-        help="SAE ID (default: layer_20/width_16k/canonical)"
+        default=None,
+        help="SAE ID (optional, auto-configured from --layer if not specified)"
     )
     
     parser.add_argument(
         "--target-layer",
         type=int,
-        default=20,
-        help="Target layer number (default: 20)"
+        default=None,
+        help="[Deprecated] Use --layer instead"
     )
     
     parser.add_argument(
         "--hook-name",
         type=str,
         default=None,
-        help="Hook name (default: auto-generated from target-layer)"
+        help="Hook name (optional, auto-configured from --layer if not specified)"
     )
     
     # 抽出設定
@@ -120,17 +128,40 @@ def main():
         print(f"❌ Error: Input file not found: {args.input}")
         return 1
     
-    # Hook名の自動生成
+    # target-layer（deprecated）の警告
+    if args.target_layer is not None:
+        print(f"⚠️  Warning: --target-layer is deprecated. Use --layer instead.")
+        layer = args.target_layer
+    else:
+        layer = args.layer
+    
+    # Layer番号からsae_idとhook_nameを自動設定
+    sae_id = args.sae_id
     hook_name = args.hook_name
-    if hook_name is None:
-        hook_name = f"blocks.{args.target_layer}.hook_resid_post"
+    
+    if sae_id is None or hook_name is None:
+        # layer番号に基づいて自動設定
+        if layer == 9:
+            sae_id = sae_id or "layer_9/width_131k/canonical"
+            hook_name = hook_name or "blocks.9.hook_resid_post"
+            print(f"   📍 Using Layer 9 configuration")
+        elif layer == 20:
+            sae_id = sae_id or "layer_20/width_131k/canonical"
+            hook_name = hook_name or "blocks.20.hook_resid_post"
+            print(f"   📍 Using Layer 20 configuration")
+        else:
+            print(f"❌ Error: Unsupported layer: {layer}. Supported layers: 9, 20")
+            return 1
+    
+    print(f"   🔧 SAE ID: {sae_id}")
+    print(f"   🔧 Hook: {hook_name}")
     
     # 設定の作成
     config = ExtractionConfig(
         model_name=args.model,
         sae_release=args.sae_release,
-        sae_id=args.sae_id,
-        target_layer=args.target_layer,
+        sae_id=sae_id,
+        target_layer=layer,
         hook_name=hook_name,
         top_k_features=args.top_k,
         dtype=torch.bfloat16
