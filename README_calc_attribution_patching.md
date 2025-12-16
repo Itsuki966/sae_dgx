@@ -1,14 +1,73 @@
-# calc_attribution_patching.ipynb 説明書
+# Attribution Patching Analysis 説明書
 
 ## 概要
 
-このノートブックは、LLM（Gemma-2-9b-it）の迎合性（Sycophancy）を分析するため、SAE（Sparse Autoencoder）の特徴量に対する**因果効果（Attribution Patching Score）**を計算するスクリプトです。
+このツールは、LLM（Gemma-2-9b-it）の迎合性（Sycophancy）を分析するため、SAE（Sparse Autoencoder）の特徴量に対する**因果効果（Attribution Patching Score）**を計算するスクリプトです。
+
+**提供形式:**
+- **Pythonスクリプト版:** `calc_attribution_patching.py` - コマンドラインから実行可能
+- **Notebookバージョン:** `calc_attribution_patching.ipynb` - Google Colab/Jupyter用
+
+---
+
+## クイックスタート
+
+### **Pythonスクリプトで実行（推奨）**
+
+```bash
+# 基本的な実行（デフォルト設定）
+python calc_attribution_patching.py
+
+# カスタム入力ファイルを指定
+python calc_attribution_patching.py --input path/to/input.json
+
+# カスタム出力ファイルを指定
+python calc_attribution_patching.py --output results/my_output.json
+
+# すべてのオプションを指定
+python calc_attribution_patching.py \
+  --input results/labeled_data/combined_feedback_data.json \
+  --output results/feedback/my_atp_results.json \
+  --config FEEDBACK_GEMMA2_9B_IT_CONFIG
+```
+
+### **コマンドラインオプション**
+
+| オプション | デフォルト | 説明 |
+|-----------|-----------|------|
+| `--input` | `results/labeled_data/combined_feedback_data.json` | 入力JSONファイルパス |
+| `--output` | `results/feedback/atp_results_gemma-2-9b-it_YYYYMMDD_HHMMSS.json` | 出力JSONファイルパス（自動でタイムスタンプ付き） |
+| `--config` | `FEEDBACK_GEMMA2_9B_IT_CONFIG` | 使用する設定名（config.pyから） |
+
+### **ヘルプの表示**
+
+```bash
+python calc_attribution_patching.py --help
+```
 
 ---
 
 ## 1. 処理の流れ
 
 ### **ステップ1: 環境セットアップ**
+
+#### **Pythonスクリプト版**
+```
+プロジェクトルート自動検出
+  ↓
+必要なライブラリのインポート
+  ↓
+GPU確認
+  ↓
+出力ディレクトリ自動作成
+```
+
+- プロジェクトルートを自動検出（スクリプトの親ディレクトリ）
+- 必要なライブラリ（`transformer_lens`, `sae_lens`等）を使用
+- GPU（A100 40GB推奨）の利用可能性を確認
+- 出力ディレクトリが存在しない場合は自動作成
+
+#### **Notebookバージョン（Google Colab用）**
 ```
 Google Drive マウント
   ↓
@@ -20,7 +79,7 @@ GPU確認
 ```
 
 - Google Driveをマウントし、プロジェクトフォルダ（`/content/drive/MyDrive/sae_pj2`）にアクセス
-- 必要なライブラリ（`transformer_lens`, `sae_lens`等）をインストール
+- requirements-colab.txtから依存関係をインストール
 - GPU（A100 40GB想定）の利用可能性を確認
 
 ---
@@ -36,8 +95,11 @@ Base回答 ⇔ Target回答（迎合）のペアを抽出
 
 **入力ファイル例:**
 ```
+results/labeled_data/combined_feedback_data.json
 results/labeled_data/feedback_analysis_gemma-2-9b-it_20251117_0-100.json_labeled.json
 ```
+
+**注意:** 入力ファイルが見つからない場合、`results/feedback/` ディレクトリ内の最新の `feedback_analysis_*.json` ファイルが自動的に使用されます。
 
 **ペアリングロジック:**
 - 各質問について、`template_type="base"` の回答を特定
@@ -316,31 +378,147 @@ top_indices = torch.topk(atp_scores.abs(), k=50).indices
 
 ## 6. 実行環境
 
-- **ハードウェア:** Google Colab (A100 40GB)
-- **実行時間（推定）:** 145サンプルで約15-20分
+### **推奨環境**
+- **ハードウェア:** GPU（A100 40GB推奨、少なくとも24GB以上のVRAM）
+- **Python:** 3.8以上
+- **主要な依存ライブラリ:**
+  - `torch` (PyTorch)
+  - `transformer-lens` (HookedTransformer)
+  - `sae-lens` (Sparse Autoencoder)
+  - `tqdm` (進捗バー)
+
+### **実行時間とリソース**
+- **実行時間（推定）:** 145サンプルで約15-20分（A100 40GB使用時）
 - **出力ファイルサイズ:** 約5-10MB（50特徴×145サンプル）
+- **メモリ使用量:** ピーク時で約30-35GB VRAM
+
+### **ローカル実行 vs Colab実行**
+
+| 項目 | Pythonスクリプト（ローカル/サーバー） | Notebook（Colab） |
+|------|--------------------------------------|-------------------|
+| **実行環境** | ローカルマシン or サーバー | Google Colab |
+| **ファイルアクセス** | 直接アクセス | Google Driveマウント |
+| **セットアップ** | シンプル | Drive連携が必要 |
+| **自動化** | 容易（cron等） | やや困難 |
+| **推奨用途** | 定期実行、バッチ処理 | 探索的分析、デバッグ |
 
 ---
 
-## 7. 次のステップ
+## 7. 実装の詳細
 
-このスクリプトの出力を使って:
+### **関数とクラス**
+
+#### **`yield_sycophancy_samples(data)`**
+入力JSONからAttribution Patching用のサンプルペアを生成するジェネレータ。
+
+**戻り値:** 各サンプルの辞書
+```python
+{
+    "question_id": int,
+    "variation_index": int,
+    "template_type": str,
+    "prompt": str,
+    "target_response": str,
+    "base_response": str
+}
+```
+
+#### **`AttributionPatchingAnalyzer`**
+Attribution Patching分析を実行するメインクラス。
+
+**主要メソッド:**
+- `__init__(model, sae, config)` - 初期化とhook名の設定
+- `_find_answer_start_position(tokens, prompt)` - プロンプト終了位置の特定
+- `calculate_atp_for_sample(sample)` - 1サンプルの分析実行
+
+#### **`run_attribution_patching_pipeline()`**
+メインパイプライン関数。データ読み込みからモデル実行、結果保存まで実行。
+
+**引数:**
+- `input_json_path` (str, optional): 入力ファイルパス
+- `output_json_path` (str, optional): 出力ファイルパス
+- `config_name` (str): 使用するconfig名
+
+### **Pythonスクリプトとして使う場合の例**
+
+#### **他のスクリプトから呼び出す**
+```python
+from calc_attribution_patching import run_attribution_patching_pipeline
+
+# カスタム設定で実行
+run_attribution_patching_pipeline(
+    input_json_path="my_data/input.json",
+    output_json_path="my_results/output.json"
+)
+```
+
+#### **関数やクラスを個別にインポート**
+```python
+from calc_attribution_patching import (
+    yield_sycophancy_samples,
+    AttributionPatchingAnalyzer
+)
+
+# データを直接処理
+with open("data.json") as f:
+    data = json.load(f)
+
+for sample in yield_sycophancy_samples(data):
+    print(sample["question_id"], sample["template_type"])
+```
+
+---
+
+## 8. 次のステップ
+
+このツールの出力を使って:
 1. **特徴の特定**: 高スコアの特徴IDをリスト化
 2. **介入実験**: その特徴を0にして（Ablation）再生成
 3. **効果測定**: 迎合性が実際に減少するか検証
 
 ---
 
-## 8. トラブルシューティング
+## 9. トラブルシューティング
 
 ### **"No differing tokens found" が多い場合**
-- `max_tokens_to_check` を50に増やす
+- `max_tokens_to_check` を50に増やす（スクリプト内の変数を編集）
 - BaseとTargetの回答が本当に異なるか確認
 
 ### **OOM (Out of Memory) エラー**
 - GPUメモリを確認（A100 40GB推奨）
 - シーケンス長が長すぎる場合はスキップ
+- `top_k` の値を減らす（50 → 20など）
 
 ### **実行が遅い場合**
 - `save_interval` を50に増やす（I/O削減）
 - デバッグ出力（`if i < 3`）を無効化
+- GPUが正しく認識されているか確認
+
+### **ModuleNotFoundError: No module named 'config'**
+- スクリプトをプロジェクトルートから実行しているか確認
+- `config.py` ファイルが同じディレクトリに存在するか確認
+
+### **入力ファイルが見つからない**
+```bash
+# エラー例
+FileNotFoundError: Input JSON file not found: results/labeled_data/combined_feedback_data.json
+
+# 対処法
+# 1. ファイルが存在するか確認
+ls results/labeled_data/
+
+# 2. 明示的にパスを指定
+python calc_attribution_patching.py --input path/to/actual/file.json
+
+# 3. 最新ファイルを自動検索させる（inputを指定しない）
+python calc_attribution_patching.py
+```
+
+### **Permission Error（出力ファイル）**
+```bash
+# 出力ディレクトリに書き込み権限があるか確認
+chmod u+w results/feedback/
+
+# または別のディレクトリを指定
+python calc_attribution_patching.py --output /tmp/atp_results.json
+```
