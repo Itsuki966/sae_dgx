@@ -15,20 +15,26 @@
 ### **Pythonスクリプトで実行（推奨）**
 
 ```bash
-# 基本的な実行（デフォルト設定）
+# 基本的な実行（デフォルト: Layer 31）
 python calc_attribution_patching.py
 
+# Layer 20を使用
+python calc_attribution_patching.py --layer 20
+
+# Layer 9を使用
+python calc_attribution_patching.py --layer 9
+
 # カスタム入力ファイルを指定
-python calc_attribution_patching.py --input path/to/input.json
+python calc_attribution_patching.py --input path/to/input.json --layer 20
 
 # カスタム出力ファイルを指定
-python calc_attribution_patching.py --output results/my_output.json
+python calc_attribution_patching.py --output results/my_output.json --layer 20
 
 # すべてのオプションを指定
 python calc_attribution_patching.py \
   --input results/labeled_data/combined_feedback_data.json \
   --output results/feedback/my_atp_results.json \
-  --config FEEDBACK_GEMMA2_9B_IT_CONFIG
+  --layer 20
 ```
 
 ### **コマンドラインオプション**
@@ -37,7 +43,18 @@ python calc_attribution_patching.py \
 |-----------|-----------|------|
 | `--input` | `results/labeled_data/combined_feedback_data.json` | 入力JSONファイルパス |
 | `--output` | `results/feedback/atp_results_gemma-2-9b-it_YYYYMMDD_HHMMSS.json` | 出力JSONファイルパス（自動でタイムスタンプ付き） |
-| `--config` | `FEEDBACK_GEMMA2_9B_IT_CONFIG` | 使用する設定名（config.pyから） |
+| `--layer` | `31` | 解析対象のlayer番号（9, 20, 31から選択。推奨方法） |
+| `--config` | `None` | 使用する設定名（config.pyから。`--layer`指定時は無視される） |
+
+### **Layer番号とSAE設定の対応**
+
+| Layer | SAE ID | Hook Name | SAE幅 |
+|-------|--------|-----------|-------|
+| 9 | `layer_9/width_131k/canonical` | `blocks.9.hook_resid_post` | 131k |
+| 20 | `layer_20/width_131k/canonical` | `blocks.20.hook_resid_post` | 131k |
+| 31 | `layer_31/width_16k/canonical` | `blocks.31.hook_resid_post` | 16k |
+
+**注意:** `--layer` オプションを使用すると、SAE IDとhook nameは自動的に設定されます。
 
 ### **ヘルプの表示**
 

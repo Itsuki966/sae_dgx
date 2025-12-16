@@ -27,10 +27,14 @@ Teacher Forcingを利用して指定レイヤーのSAE activationを取得する
 ### 基本的な使い方
 
 ```bash
+# Layer 20を使用（デフォルト）
+python run_sae_activation_extraction.py \
+  --input results/labeled_data/combined_feedback_data.json
+
+# Layer 9を使用
 python run_sae_activation_extraction.py \
   --input results/labeled_data/combined_feedback_data.json \
-  --target-layer 20 \
-  --sae-id layer_20/width_16k/canonical
+  --layer 9
 ```
 
 ### 主要なオプション
@@ -39,13 +43,18 @@ python run_sae_activation_extraction.py \
 
 - `--input`: 入力JSONファイルパス（分析結果を含むファイル）
 
-#### モデル設定
+#### Layer設定（推奨）
+
+- `--layer`: 対象レイヤー番号（9または20、デフォルト: 20）
+  - **自動設定**: `--layer`を指定するだけで、`sae-id`と`hook-name`が自動的に設定されます
+
+#### モデル設定（高度な使用）
 
 - `--model`: モデル名（デフォルト: `google/gemma-2-9b-it`）
 - `--sae-release`: SAEリリース名（デフォルト: `gemma-scope-9b-pt-res-canonical`）
-- `--sae-id`: SAE ID（デフォルト: `layer_20/width_16k/canonical`）
-- `--target-layer`: 対象レイヤー番号（デフォルト: 20）
-- `--hook-name`: Hook名（デフォルト: 自動生成 `blocks.{target_layer}.hook_resid_post`）
+- `--sae-id`: SAE ID（オプショナル、`--layer`使用時は自動設定）
+- `--hook-name`: Hook名（オプショナル、`--layer`使用時は自動設定）
+- `--target-layer`: [非推奨] `--layer`を使用してください
 
 #### 抽出設定
 
@@ -56,6 +65,15 @@ python run_sae_activation_extraction.py \
 
 **注意**: `--output`オプションは削除されました。ファイル名は自動生成されます（下記「出力ファイル名」参照）
 
+### Layer番号とSAE設定の対応
+
+| Layer | SAE ID | Hook Name | SAE幅 |
+|-------|--------|-----------|-------|
+| 9 | `layer_9/width_131k/canonical` | `blocks.9.hook_resid_post` | 131k |
+| 20 | `layer_20/width_131k/canonical` | `blocks.20.hook_resid_post` | 131k |
+
+**`--layer`を使用すると、上記の設定が自動的に適用されます。**
+
 ### 使用例
 
 #### 1. Layer 20のactivationを取得（デフォルト設定）
@@ -65,13 +83,12 @@ python run_sae_activation_extraction.py \
   --input results/labeled_data/combined_feedback_data.json
 ```
 
-#### 2. Layer 31のactivationを取得
+#### 2. Layer 9のactivationを取得
 
 ```bash
 python run_sae_activation_extraction.py \
   --input results/labeled_data/combined_feedback_data.json \
-  --target-layer 31 \
-  --sae-id layer_31/width_16k/canonical
+  --layer 9
 ```
 
 #### 3. 全トークンのactivationを保存（メモリ注意）
@@ -79,7 +96,7 @@ python run_sae_activation_extraction.py \
 ```bash
 python run_sae_activation_extraction.py \
   --input results/labeled_data/combined_feedback_data.json \
-  --target-layer 20 \
+  --layer 20 \
   --save-all-tokens
 ```
 
@@ -88,19 +105,20 @@ python run_sae_activation_extraction.py \
 ```bash
 python run_sae_activation_extraction.py \
   --input results/labeled_data/combined_feedback_data.json \
-  --target-layer 20 \
+  --layer 9 \
   --max-samples 10 \
   --verbose
 ```
 
-#### 5. Gemma-2-27B モデルでの実行
+#### 5. 高度な使用：手動でSAE設定を指定
 
 ```bash
+# カスタムSAE IDとhook nameを指定する場合
 python run_sae_activation_extraction.py \
   --input results/labeled_data/combined_feedback_data.json \
-  --model google/gemma-2-27b-it \
-  --sae-release gemma-scope-27b-pt-res \
+  --layer 20 \
   --sae-id layer_20/width_16k/canonical \
+  --hook-name blocks.20.hook_resid_post
   --target-layer 20
 ```
 
