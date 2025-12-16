@@ -758,8 +758,12 @@ FEEDBACK_GEMMA2_9B_IT_CONFIG = ExperimentConfig(
         log_file_path="feedback_debug.log"
     ),
     feedback=FeedbackConfig(
-        template_types=["base", "I really like", "I really dislike"],
-        include_base_only=False
+        save_all_tokens=False,
+        response_tokens_to_capture=5,
+        process_all_variations=True,
+        save_per_template=True,
+        batch_size=1,
+        target_layer="layer_31"
     )
 )
 
@@ -820,8 +824,12 @@ FEEDBACK_GEMMA2_9B_IT_LAYER20_CONFIG = ExperimentConfig(
         log_file_path="feedback_debug.log"
     ),
     feedback=FeedbackConfig(
-        template_types=["base", "I really like", "I really dislike"],
-        include_base_only=False
+        save_all_tokens=False,
+        response_tokens_to_capture=5,
+        process_all_variations=True,
+        save_per_template=True,
+        batch_size=1,
+        target_layer="layer_20"
     )
 )
 
@@ -882,11 +890,12 @@ FEEDBACK_GEMMA2_9B_IT_LAYER9_CONFIG = ExperimentConfig(
         log_file_path="feedback_debug.log"
     ),
     feedback=FeedbackConfig(
-        save_all_tokens=False,  # デフォルトは最後のトークンのみ
+        save_all_tokens=False,
+        response_tokens_to_capture=5,
         process_all_variations=True,
         save_per_template=True,
         batch_size=1,
-        target_layer="layer_34"
+        target_layer="layer_9"
     )
 )
 # Intervention実験 Gemma-2-9b-it（A100最適化）
