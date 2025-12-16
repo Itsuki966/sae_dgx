@@ -462,14 +462,72 @@ intervention_gemma-2-9b-it_20251206_143022_0-45_ERROR_RECOVERY.json
 
 ## 使用例
 
-### 基本的な実行
+### Pythonスクリプトでの実行（推奨）
+
+コマンドラインから `run_intervention_experiment.py` を使用します。
+
+#### 基本的な実行
+
+```bash
+# CSVから特徴量IDを読み込んで実験
+python run_intervention_experiment.py \
+  --features-csv results/intervention/candidates/intervention_candidates_20251211_193847.csv
+```
+
+#### オプション指定
+
+```bash
+# サンプルサイズを指定
+python run_intervention_experiment.py \
+  --features-csv results/intervention/candidates/intervention_candidates_20251211_193847.csv \
+  --sample-size 10
+
+# 範囲を指定して実行（101問目から200問目まで）
+python run_intervention_experiment.py \
+  --features-csv results/intervention/candidates/intervention_candidates_20251211_193847.csv \
+  --start-index 100 \
+  --end-index 200
+
+# JSONファイルから特徴量IDを読み込み
+python run_intervention_experiment.py \
+  --features-json results/selected_features.json \
+  --sample-size 50
+
+# 特徴量IDを直接指定
+python run_intervention_experiment.py \
+  --features 123,456,789,1024,2048 \
+  --sample-size 5
+
+# 結果分析をスキップ
+python run_intervention_experiment.py \
+  --features-csv results/intervention/candidates/intervention_candidates_20251211_193847.csv \
+  --no-analysis
+
+# カスタム設定を使用
+python run_intervention_experiment.py \
+  --features-csv results/intervention/candidates/intervention_candidates_20251211_193847.csv \
+  --config INTERVENTION_GEMMA2_9B_IT_CONFIG \
+  --sample-size 100
+```
+
+#### ヘルプの表示
+
+```bash
+python run_intervention_experiment.py --help
+```
+
+### Pythonコードでの実行
+
+#### 基本的な実行
 
 ```python
 from intervention_runner import InterventionRunner
 from config import INTERVENTION_GEMMA2_9B_IT_CONFIG
+import pandas as pd
 
-# 介入対象特徴量（Step 4で特定）
-intervention_feature_ids = [123, 456, 789, 1024, 2048]
+# CSVから特徴量IDを読み込み
+df = pd.read_csv("results/intervention/candidates/intervention_candidates_20251211_193847.csv")
+intervention_feature_ids = list(df["feature_index"])
 
 # 実験実行
 runner = InterventionRunner(
@@ -482,7 +540,7 @@ output_path = runner.run_complete_experiment(sample_size=10)
 print(f"Results saved to: {output_path}")
 ```
 
-### 範囲を指定して実行
+#### 範囲を指定して実行
 
 ```python
 # 101問目から200問目まで処理（index 100-199）
@@ -589,9 +647,10 @@ for result in data['results']:
 
 ## 関連ファイル
 
-- **`intervention_runner.py`**: 介入実験の実装
-- **`config.py`**: 実験設定（`InterventionConfig`, `INTERVENTION_GEMMA2_9B_IT_CONFIG`）
+- **`intervention_runner.py`**: 介入実験の実装コア
+- **`run_intervention_experiment.py`**: コマンドライン実行スクリプト（推奨）
 - **`intervention_experiment.ipynb`**: Google Colab用実行ノートブック
+- **`config.py`**: 実験設定（`InterventionConfig`, `INTERVENTION_GEMMA2_9B_IT_CONFIG`）
 - **`feedback_analyzer.py`**: 元のSAE分析器（データ読み込みロジックを共有）
 
 ## 参考文献
