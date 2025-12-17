@@ -258,7 +258,7 @@ Examples:
         '--output-dir',
         type=str,
         default=None,
-        help='結果の出力ディレクトリ（デフォルト: results/intervention）'
+        help='結果の出力ディレクトリ（デフォルト: results/intervention/intervention_results）'
     )
     
     args = parser.parse_args()
@@ -302,10 +302,10 @@ Examples:
     )
     print("✅ InterventionRunner initialized")
     
-    # 出力ディレクトリの設定
-    if args.output_dir:
-        runner.results_dir = Path(args.output_dir)
-        runner.results_dir.mkdir(parents=True, exist_ok=True)
+    # 出力ディレクトリの設定（デフォルトを intervention_results に変更）
+    output_dir = args.output_dir if args.output_dir else "results/intervention/intervention_results"
+    runner.results_dir = Path(output_dir)
+    runner.results_dir.mkdir(parents=True, exist_ok=True)
     
     # 実験の実行
     print("\n🚀 Starting intervention experiment...")
