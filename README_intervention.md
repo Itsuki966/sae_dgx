@@ -37,7 +37,10 @@ runner.load_model_and_sae()
 
 **ロード内容:**
 - **HookedTransformer**: Gemma-2-9b-it モデル
-- **SAE**: gemma-scope-9b-it-res-canonical (layer_31/width_16k/canonical)
+- **SAE**: gemma-scope-9b-it-res-canonical
+  - Layer 31: layer_31/width_16k/canonical (デフォルト)
+  - Layer 20: layer_20/width_131k/canonical
+  - Layer 9: layer_9/width_131k/canonical
 - **デバイス**: CUDA (GPU利用可能な場合)
 - **データ型**: bfloat16 (メモリ効率化)
 
@@ -503,10 +506,22 @@ python run_intervention_experiment.py \
   --features-csv results/intervention/candidates/intervention_candidates_20251211_193847.csv \
   --no-analysis
 
-# カスタム設定を使用
+# カスタム設定を使用（Layer 31 - デフォルト）
 python run_intervention_experiment.py \
   --features-csv results/intervention/candidates/intervention_candidates_20251211_193847.csv \
   --config INTERVENTION_GEMMA2_9B_IT_CONFIG \
+  --sample-size 100
+
+# Layer 20で実験
+python run_intervention_experiment.py \
+  --features-csv results/intervention/candidates/layer20_candidates.csv \
+  --config INTERVENTION_GEMMA2_9B_IT_LAYER20_CONFIG \
+  --sample-size 100
+
+# Layer 9で実験
+python run_intervention_experiment.py \
+  --features-csv results/intervention/candidates/layer9_candidates.csv \
+  --config INTERVENTION_GEMMA2_9B_IT_LAYER9_CONFIG \
   --sample-size 100
 ```
 
@@ -548,6 +563,28 @@ output_path = runner.run_complete_experiment(
     start_index=100, 
     end_index=200
 )
+```
+
+#### レイヤー別の実験
+
+```python
+# Layer 20で実験
+from config import INTERVENTION_GEMMA2_9B_IT_LAYER20_CONFIG
+
+runner_layer20 = InterventionRunner(
+    config=INTERVENTION_GEMMA2_9B_IT_LAYER20_CONFIG,
+    intervention_feature_ids=layer20_feature_ids
+)
+output_path = runner_layer20.run_complete_experiment(sample_size=10)
+
+# Layer 9で実験
+from config import INTERVENTION_GEMMA2_9B_IT_LAYER9_CONFIG
+
+runner_layer9 = InterventionRunner(
+    config=INTERVENTION_GEMMA2_9B_IT_LAYER9_CONFIG,
+    intervention_feature_ids=layer9_feature_ids
+)
+output_path = runner_layer9.run_complete_experiment(sample_size=10)
 ```
 
 ### 設定のカスタマイズ
