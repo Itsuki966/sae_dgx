@@ -147,7 +147,7 @@ def analyze_results(results_path: str):
         
         # 最初のバリエーションの詳細
         first_variation = first_question['variations'][0]
-        print(f"\n--- Variation 1: {first_variation['template']} ---")
+        print(f"\n--- Variation 1: {first_variation['template_type']} ---")
         print(f"Prompt: {first_variation['prompt'][:150]}...")
         print(f"\nBaseline Response:")
         print(f"  {first_variation['baseline_response']}")
