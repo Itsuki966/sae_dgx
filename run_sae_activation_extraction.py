@@ -160,6 +160,13 @@ def main():
     print(f"   🔧 SAE ID: {sae_id}")
     print(f"   🔧 Hook: {hook_name}")
     
+    # デバイスの明示的な設定
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"   🔧 Device: {device}")
+    if device == "cuda":
+        print(f"   🔧 GPU: {torch.cuda.get_device_name(0)}")
+        print(f"   🔧 Available GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
+    
     # 設定の作成
     config = ExtractionConfig(
         model_name=args.model,
@@ -167,6 +174,7 @@ def main():
         sae_id=sae_id,
         target_layer=layer,
         hook_name=hook_name,
+        device=device,  # デバイスを明示的に指定
         top_k_features=args.top_k,
         dtype=torch.bfloat16
     )
