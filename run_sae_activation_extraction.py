@@ -52,7 +52,7 @@ def parse_args():
     parser.add_argument(
         "--sae-release",
         type=str,
-        default="gemma-scope-9b-pt-res-canonical",
+        default="gemma-scope-9b-it-res-canonical",
         help="SAE release name"
     )
     
@@ -60,8 +60,8 @@ def parse_args():
         "--layer",
         type=int,
         default=20,
-        choices=[9, 20],
-        help="Target layer number (9 or 20, default: 20). Auto-configures sae-id and hook-name."
+        choices=[9, 20, 31],
+        help="Target layer number (9, 20, or 31, default: 20). Auto-configures sae-id and hook-name."
     )
     
     parser.add_argument(
@@ -149,8 +149,12 @@ def main():
             sae_id = sae_id or "layer_20/width_131k/canonical"
             hook_name = hook_name or "blocks.20.hook_resid_post"
             print(f"   📍 Using Layer 20 configuration")
+        elif layer == 31:
+            sae_id = sae_id or "layer_31/width_131k/canonical"
+            hook_name = hook_name or "blocks.31.hook_resid_post"
+            print(f"   📍 Using Layer 31 configuration")
         else:
-            print(f"❌ Error: Unsupported layer: {layer}. Supported layers: 9, 20")
+            print(f"❌ Error: Unsupported layer: {layer}. Supported layers: 9, 20, 31")
             return 1
     
     print(f"   🔧 SAE ID: {sae_id}")
