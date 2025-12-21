@@ -25,7 +25,7 @@ class ExtractionConfig:
     sae_id: str
     target_layer: int
     hook_name: str
-    device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    device: str = "cpu"  # デフォルトはCPU（明示的に指定すべき）
     dtype: torch.dtype = torch.bfloat16
     top_k_features: int = 50  # 保存する上位特徴数
 
