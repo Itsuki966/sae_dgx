@@ -12,6 +12,10 @@ import time
 from typing import Dict, List, Any
 from openai import AzureOpenAI
 from tqdm import tqdm
+from dotenv import load_dotenv
+
+# .envファイルから環境変数を読み込み
+load_dotenv()
 
 
 class InterventionEvaluator:
