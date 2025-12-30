@@ -34,10 +34,12 @@ def yield_sycophancy_samples(data: Dict[str, Any]) -> Generator[Dict[str, Any], 
 
         # 1. Base回答の特定
         base_variation = None
-        for var in variations:
+        base_idx = -1  # Baseのインデックスを保持
+        for idx, var in enumerate(variations):
             t_type = var.get("template_type")
             if t_type == "base" or t_type == "(base)" or not t_type:
                 base_variation = var
+                base_idx = idx
                 break
 
         if not base_variation:
@@ -52,6 +54,7 @@ def yield_sycophancy_samples(data: Dict[str, Any]) -> Generator[Dict[str, Any], 
                 yield {
                     "question_id": question_id,
                     "variation_index": idx,
+                    "base_variation_index": base_idx,  # Baseのインデックスを返す
                     "template_type": target_variation.get("template_type"),
                     "prompt": target_variation.get("prompt"),
                     "target_response": target_variation.get("response"),
@@ -137,8 +140,34 @@ class AttributionPatchingAnalyzer:
         # target_pos はプロンプト最後の位置なので、offset-1 の位置のLogitを見る
         logit_pos = target_pos + token_offset - 1
 
-        # 3. Forward Pass & Metric Calculation
+        # 3-0. Base回答での特徴量取得（Attribution Patchingの差分計算用）
+        # 勾配計算は不要、値のみ保存
         self.model.eval()
+        base_f_acts = None
+        
+        with torch.no_grad():
+            base_storage = {}
+            
+            def base_hook(activation, hook):
+                """Base回答の特徴量を取得（勾配不要）"""
+                base_act = activation[:, base_target_pos:base_target_pos+1, :]
+                base_storage['acts'] = self.sae.encode(base_act)
+                return activation
+            
+            try:
+                _ = self.model.run_with_hooks(
+                    base_input_tokens,
+                    fwd_hooks=[(self.hook_name, base_hook)]
+                )
+                base_f_acts = base_storage['acts'].detach().cpu()
+            except Exception as e:
+                # Base特徴量の取得に失敗した場合は警告のみ（処理は継続）
+                print(f"⚠️ Failed to get base features: {e}")
+            finally:
+                del base_storage
+                torch.cuda.empty_cache()
+
+        # 3. Forward Pass & Metric Calculation
         self.model.zero_grad()
 
         # フック内でデータをキャプチャするためのコンテナ
@@ -194,14 +223,27 @@ class AttributionPatchingAnalyzer:
             metric.backward()
 
             # 6. AtP Score Calculation
-            # Score = Activation * Gradient
+            # Score = (Target特徴量 - Base特徴量) * Gradient
+            # これにより「Base→Targetの変化が引き起こした効果」を測定
             f_acts = feature_acts_storage['acts']
             f_grad = f_acts.grad
 
             if f_acts is None or f_grad is None:
                 return {"error": "Failed to capture gradients"}
 
-            atp_scores = (f_acts * f_grad).detach().cpu().squeeze()  # [n_features]
+            # Target特徴量をCPUに移動
+            f_acts_cpu = f_acts.detach().cpu().squeeze()  # [n_features]
+            f_grad_cpu = f_grad.detach().cpu().squeeze()  # [n_features]
+            
+            # Attribution Patching: 差分 × 勾配
+            if base_f_acts is not None:
+                base_f_acts_squeezed = base_f_acts.squeeze()  # [n_features]
+                delta_f = f_acts_cpu - base_f_acts_squeezed  # Target - Base
+                atp_scores = delta_f * f_grad_cpu
+            else:
+                # Baseの取得に失敗した場合はフォールバック（従来の方法）
+                print("⚠️ Using fallback: f_acts * f_grad (no base comparison)")
+                atp_scores = f_acts_cpu * f_grad_cpu
 
             # 結果の抽出（Top-K & Non-zero）
             # メモリ節約のため、スコアが高いものだけを保存
@@ -212,14 +254,22 @@ class AttributionPatchingAnalyzer:
             for idx in top_indices:
                 idx_val = idx.item()
                 score = atp_scores[idx_val].item()
-                activation_val = f_acts[0, 0, idx_val].item()
-
-                top_features.append({
+                target_act = f_acts_cpu[idx_val].item()
+                
+                feature_dict = {
                     "id": str(idx_val),
                     "score": score,
-                    "activation": activation_val,
-                    "gradient": f_grad[0, 0, idx_val].item()
-                })
+                    "target_activation": target_act,
+                    "gradient": f_grad_cpu[idx_val].item()
+                }
+                
+                # Base特徴量がある場合は差分情報も追加
+                if base_f_acts is not None:
+                    base_act = base_f_acts.squeeze()[idx_val].item()
+                    feature_dict["base_activation"] = base_act
+                    feature_dict["activation_delta"] = target_act - base_act
+                
+                top_features.append(feature_dict)
 
             return {
                 "status": "success",
@@ -245,6 +295,8 @@ class AttributionPatchingAnalyzer:
                 del f_acts
             if 'f_grad' in locals():
                 del f_grad
+            if 'base_f_acts' in locals():
+                del base_f_acts
             torch.cuda.empty_cache()
 
 
@@ -357,6 +409,7 @@ def run_attribution_patching_pipeline(
         # 元のJSONに結果を統合
         question_id = sample["question_id"]
         variation_idx = sample["variation_index"]
+        base_variation_idx = sample["base_variation_index"]
 
         # デバッグ: 結果の内容を表示（最初の数サンプルのみ）
         if i < 3:
@@ -368,6 +421,7 @@ def run_attribution_patching_pipeline(
                 variations = result["variations"]
                 if variation_idx < len(variations):
                     if res.get("status") == "success":
+                        # atp_analysis フィールドに保存
                         variations[variation_idx]["atp_analysis"] = {
                             "top_features": res["top_features"],
                             "target_token": res["target_token"],
@@ -375,6 +429,42 @@ def run_attribution_patching_pipeline(
                             "token_position": res["token_position"],
                             "logit_diff": res["logit_diff"]
                         }
+                        
+                        # ★ sae_activations フィールドにも保存（後続スクリプト用） ★
+                        activation_key = "prompt_last_token"  # デフォルトのキー名
+                        
+                        # Target活性値の辞書を作成 {feature_id: activation}
+                        target_acts_dict = {
+                            f["id"]: f["target_activation"] 
+                            for f in res["top_features"]
+                        }
+                        
+                        # sae_activations がなければ作成
+                        if "sae_activations" not in variations[variation_idx]:
+                            variations[variation_idx]["sae_activations"] = {}
+                        
+                        variations[variation_idx]["sae_activations"][activation_key] = target_acts_dict
+                        
+                        # Base variation にも活性値を保存（Log Ratio計算用）
+                        if base_variation_idx >= 0 and base_variation_idx < len(variations):
+                            base_var = variations[base_variation_idx]
+                            
+                            # Base活性値の辞書を作成
+                            base_acts_dict = {
+                                f["id"]: f["base_activation"]
+                                for f in res["top_features"]
+                                if "base_activation" in f
+                            }
+                            
+                            if "sae_activations" not in base_var:
+                                base_var["sae_activations"] = {}
+                            
+                            # 既存の値があればマージ（複数のTargetから参照される可能性）
+                            if activation_key not in base_var["sae_activations"]:
+                                base_var["sae_activations"][activation_key] = {}
+                            
+                            base_var["sae_activations"][activation_key].update(base_acts_dict)
+                        
                     else:
                         # エラーの場合、詳細情報も保存
                         variations[variation_idx]["atp_analysis"] = {
