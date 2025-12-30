@@ -139,12 +139,27 @@ AttributionPatchingAnalyzer 初期化
 ```
 
 - **モデル:** `google/gemma-2-9b-it` (bfloat16)
-- **SAE:** Gemma Scope SAE (`layer_31/width_131k/canonical`)
-- **Hook位置:** `blocks.31.hook_resid_post`
+- **SAE:** Gemma Scope SAE（デフォルト: `layer_31/width_131k/canonical`）
+- **Hook位置:** 自動設定（例: `blocks.31.hook_resid_post`）
+- **Layer選択:** `--layer` オプションで9, 20, 31から選択可能
 
 ---
 
 ### **ステップ4: Attribution Patching 分析（各サンプル）**
+
+#### **4-0. Base回答での特徴量取得（差分計算用）**
+```python
+# 勾配計算は不要、値のみ保存
+with torch.no_grad():
+    base_logits = model.run_with_hooks(
+        base_input_tokens,
+        fwd_hooks=[(hook_name, base_hook)]
+    )
+    base_f_acts = base_storage['acts'].detach().cpu()
+```
+- Base（非迎合）回答をモデルに通してSAE特徴量を取得
+- 勾配は不要なので`torch.no_grad()`内で実行
+- 後でTarget特徴量との差分を計算するために保存
 
 #### **4-1. Teacher Forcing によるトークン化**
 ```python
@@ -213,6 +228,20 @@ metric.backward()
 # → 各SAE特徴量に対する勾配 f_acts.grad が計算される
 ```
 
+#### **4-6. AtP Score 計算（差分ベース）**
+```python
+# Target特徴量とBase特徴量の差分を計算
+delta_f = f_acts_cpu - base_f_acts_squeezed  # Target - Base
+
+# 差分 × 勾配 = Attribution Patching Score
+atp_scores = delta_f * f_grad_cpu
+```
+
+**重要なポイント:**
+- 単なる「Target時の特徴量 × 勾配」ではなく、**「変化量（Target - Base）× 勾配」**を計算
+- これにより「Base→Targetの変化が引き起こした効果」を正確に測定
+- Marks et al.のAttribution Patching理論に基づく実装
+
 ---
 
 ### **ステップ5: 結果の保存**
@@ -233,43 +262,52 @@ results/feedback/atp_results_gemma-2-9b-it_20251201_143052.json
 
 ## 2. Attribution Patching Score の算出方法
 
-### **基本式**
+### **基本式（差分ベース）**
 ```
-AtP Score(特徴 i) = Activation(特徴 i) × Gradient(特徴 i)
+AtP Score(特徴 i) = Δ Activation(特徴 i) × Gradient(特徴 i)
+                  = (Target特徴量 - Base特徴量) × Gradient
 ```
 
 ### **各要素の意味**
 
 | 要素 | 計算方法 | 意味 |
 |------|----------|------|
-| **Activation** | `f_acts[i]` | その特徴がどれだけ活性化したか |
+| **Target Activation** | `f_acts_target[i]` | Target（迎合）回答での活性化値 |
+| **Base Activation** | `f_acts_base[i]` | Base（非迎合）回答での活性化値 |
+| **Δ Activation** | `f_acts_target[i] - f_acts_base[i]` | Base→Targetでの変化量 |
 | **Gradient** | `∂Metric/∂f_acts[i]` | その特徴がMetricにどれだけ影響するか |
-| **AtP Score** | `Activation × Gradient` | 実際にMetricに寄与した量 |
+| **AtP Score** | `Δ Activation × Gradient` | **変化が**実際にMetricに寄与した量 |
 
-### **具体例**
+### **具体例（差分ベース）**
 
-#### **高スコアの特徴（迎合性に寄与）**
+#### **高スコアの特徴（迎合性を促進）**
 ```
 特徴1234:
-  Activation = 1.2  ← この文脈で強く活性化
-  Gradient = 3.5    ← Metricを3.5増やす効果
-  Score = 4.2       ← 迎合性を強めた
+  Base Activation = 0.5      ← 非迎合時の値
+  Target Activation = 1.7    ← 迎合時の値
+  Δ Activation = 1.2         ← 変化量（増加）
+  Gradient = 3.5             ← Metricを3.5増やす効果
+  Score = 1.2 × 3.5 = 4.2    ← 迎合性を強めた原因
 ```
 
 #### **負スコアの特徴（迎合性を抑制）**
 ```
 特徴5678:
-  Activation = 0.8  
-  Gradient = -2.1   ← Metricを2.1減らす効果
-  Score = -1.68     ← 迎合性を弱めた
+  Base Activation = 1.5
+  Target Activation = 0.7    ← 迎合時に減少
+  Δ Activation = -0.8        ← 変化量（減少）
+  Gradient = 2.1             ← Metricを増やす方向
+  Score = -0.8 × 2.1 = -1.68 ← 減少が迎合性を抑制
 ```
 
-#### **無関係の特徴**
+#### **活性化はあるが変化なしの特徴（無関係）**
 ```
 特徴9999:
-  Activation = 2.0  ← 発火はしている
-  Gradient = 0.05   ← ほとんど影響しない
-  Score = 0.1       ← 迎合性とは無関係
+  Base Activation = 2.0
+  Target Activation = 2.05   ← ほとんど変化なし
+  Δ Activation = 0.05        ← 変化量が小さい
+  Gradient = 2.0             ← 影響力は大きいが
+  Score = 0.05 × 2.0 = 0.1   ← 変化がないので無関係
 ```
 
 ### **Top-K 抽出**
@@ -326,14 +364,18 @@ top_indices = torch.topk(atp_scores.abs(), k=50).indices
     {
       "id": "1234",
       "score": 4.2,
-      "activation": 1.2,
+      "target_activation": 1.7,
+      "base_activation": 0.5,
+      "activation_delta": 1.2,
       "gradient": 3.5
     },
     {
       "id": "5678",
       "score": -1.68,
-      "activation": 0.8,
-      "gradient": -2.1
+      "target_activation": 0.7,
+      "base_activation": 1.5,
+      "activation_delta": -0.8,
+      "gradient": 2.1
     },
     ...  // 全50個
   ]
@@ -349,9 +391,11 @@ top_indices = torch.topk(atp_scores.abs(), k=50).indices
 | `token_position` | int | 何トークン目を使用したか（1-20） |
 | `logit_diff` | float | Metricの値（迎合度） |
 | `top_features` | array | 上位50個の特徴 |
-| `top_features[i].id` | string | SAE特徴のID（0-16383） |
-| `top_features[i].score` | float | Attribution Patching Score |
-| `top_features[i].activation` | float | その特徴の活性化値 |
+| `top_features[i].id` | string | SAE特徴のID（0-131072） |
+| `top_features[i].score` | float | Attribution Patching Score (差分×勾配) |
+| `top_features[i].target_activation` | float | Target時の特徴量活性化値 |
+| `top_features[i].base_activation` | float | Base時の特徴量活性化値 |
+| `top_features[i].activation_delta` | float | 変化量（Target - Base） |
 | `top_features[i].gradient` | float | Metricへの勾配 |
 
 #### **スキップ時（トークンが同一）**
@@ -379,8 +423,8 @@ top_indices = torch.topk(atp_scores.abs(), k=50).indices
 | `top_k` | 50 | 保存する特徴数 |
 | `save_interval` | 10 | 定期保存の間隔 |
 | `model_dtype` | bfloat16 | モデルの精度 |
-| `hook_layer` | 31 | SAEを適用する層 |
-| `sae_width` | 16384 | SAE特徴の数 |
+| `hook_layer` | 31 (デフォルト) | SAEを適用する層（9, 20, 31から選択可能） |
+| `sae_width` | 131072 | SAE特徴の数（131k） |
 
 ---
 
