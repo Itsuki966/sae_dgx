@@ -52,7 +52,7 @@ python calc_attribution_patching.py \
 |-------|--------|-----------|-------|
 | 9 | `layer_9/width_131k/canonical` | `blocks.9.hook_resid_post` | 131k |
 | 20 | `layer_20/width_131k/canonical` | `blocks.20.hook_resid_post` | 131k |
-| 31 | `layer_31/width_16k/canonical` | `blocks.31.hook_resid_post` | 16k |
+| 31 | `layer_31/width_131k/canonical` | `blocks.31.hook_resid_post` | 131k |
 
 **注意:** `--layer` オプションを使用すると、SAE IDとhook nameは自動的に設定されます。
 
@@ -139,7 +139,7 @@ AttributionPatchingAnalyzer 初期化
 ```
 
 - **モデル:** `google/gemma-2-9b-it` (bfloat16)
-- **SAE:** Gemma Scope SAE (`layer_31/width_16k/canonical`)
+- **SAE:** Gemma Scope SAE (`layer_31/width_131k/canonical`)
 - **Hook位置:** `blocks.31.hook_resid_post`
 
 ---
